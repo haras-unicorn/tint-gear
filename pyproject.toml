@@ -1,0 +1,35 @@
+[tool.poetry]
+name = "tint-gear"
+version = "0.1.0"
+description = "Warning: tint-gear may cause an uncontrollable urge to redecorate everything."
+authors = ["haras <social@haras.anonaddy.me>"]
+license = "MIT"
+readme = "README.md"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+tint-gear = "tint_gear.main:main"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+colorthief = "^0.2.1"
+
+[tool.poetry.group.dev.dependencies]
+yapf = "^0.40.2"
+pyright = "^1.1.378"
+ruff = "0.6.2"
+pytest = "^8.3.2"
+hypothesis = "^6.111.2"
+pytest-xdist = "^3.6.1"
+
+[tool.yapf]
+based_on_style = "pep8"
+column_limit = 80
+continuation_indent_width = 2
+indent_width = 2
+
+[tool.ruff.lint]
+ignore = ["E741"]
