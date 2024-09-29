@@ -51,30 +51,144 @@ def process(
     alternate,
   )
 
-  primary, secondary, accent = determine_primary_secondary_accent(
-    colors, average_saturation)
+  primary, secondary, accent = determine_primary_secondary_accent(colors)
+
+  def adjust_color_alternate(base_color, index, color_type):
+    if color_type == 'black_white':
+      alt_color, _ = determine_black_white(
+        colors,
+        is_light_theme,
+        max_saturation=0.3,
+        index=index + 1,
+      )
+      return alt_color
+    elif color_type == 'semantic':
+      return determine_semantic_color(
+        base_color,
+        colors,
+        hue_nudge_degrees=20,
+        saturation_decrease=0.2,
+      )
+    elif color_type == 'psa':
+      primary_alt, secondary_alt, accent_alt = determine_primary_secondary_accent(
+        colors,
+        saturation_increase=0.4,
+      )
+      if base_color == primary:
+        return primary_alt
+      elif base_color == secondary:
+        return secondary_alt
+      elif base_color == accent:
+        return accent_alt
+      else:
+        return base_color
+    else:
+      return base_color
+
+  def create_color_object(
+    base_color,
+    invert=False,
+    index=0,
+    color_type='default',
+  ):
+    normal = adjust_contrast(
+      base_color,
+      average_luminance,
+      is_light=not is_light_theme if invert else is_light_theme,
+      invert=is_light_theme,
+      high_contrast=high_contrast,
+      k=k,
+    )
+    high_contrast_color = adjust_contrast(
+      base_color,
+      average_luminance,
+      is_light=not is_light_theme if invert else is_light_theme,
+      invert=is_light_theme,
+      high_contrast=not high_contrast,
+      k=k,
+    )
+    inverted = adjust_contrast(
+      base_color,
+      average_luminance,
+      is_light=is_light_theme if invert else not is_light_theme,
+      invert=is_light_theme,
+      high_contrast=high_contrast,
+      k=k,
+    )
+    alternate_color = adjust_contrast(
+      adjust_color_alternate(
+        base_color,
+        index=index,
+        color_type=color_type,
+      ),
+      average_luminance,
+      is_light=not is_light_theme if invert else is_light_theme,
+      invert=is_light_theme,
+      high_contrast=high_contrast,
+      k=k,
+    )
+    return {
+      'normal': normal,
+      'high_contrast': high_contrast_color,
+      'inverted': inverted,
+      'alternate': alternate_color,
+    }
+
+  bootstrap_colors = {}
+  for name, color in zip(['primary', 'secondary', 'accent'],
+                         [primary, secondary, accent]):
+    bootstrap_colors[name] = create_color_object(
+      color,
+      color_type='psa',
+      invert=True,
+    )
 
   text_color, background_color = determine_black_white(
     colors,
     is_light_theme,
     max_saturation=0.1,
   )
-  text_color_2, background_color_2 = determine_black_white(
-    colors,
-    is_light_theme,
-    max_saturation=0.3,
-    index=1,
-  )
-  selection_color, _ = determine_black_white(
+  selection_color, text_selection_color = determine_black_white(
     colors,
     is_light_theme,
     max_saturation=0.3,
     index=2,
   )
+  text_colors = {}
+  for name, color, index in [
+    ('text', text_color, 0),
+    ('background', background_color, 0),
+    ('textSelection', selection_color, 2),
+    ('selection', selection_color, 2),
+  ]:
+    text_colors[name] = create_color_object(
+      color,
+      index=index,
+      color_type='black_white',
+      invert=(name == 'text' or name == 'textSelection'),
+    )
 
+  ansi_colors = {}
   ansi_black, ansi_white = background_color, text_color
-  ansi_bright_black, ansi_bright_white = background_color_2, text_color_2
-
+  ansi_bright_black, ansi_bright_white = selection_color, text_selection_color
+  ansi_colors['black'] = create_color_object(
+    ansi_black,
+    color_type='black_white',
+  )
+  ansi_colors['white'] = create_color_object(
+    ansi_white,
+    color_type='black_white',
+    invert=True,
+  )
+  ansi_colors['brightBlack'] = create_color_object(
+    ansi_bright_black,
+    color_type='black_white',
+  )
+  ansi_colors['brightWhite'] = create_color_object(
+    ansi_bright_white,
+    color_type='black_white',
+    invert=True,
+  )
   default_colors = {
     'red': (0.8, 0.0, 0.0),
     'green': (0.0, 0.8, 0.0),
@@ -83,18 +197,29 @@ def process(
     'magenta': (0.8, 0.0, 0.8),
     'cyan': (0.0, 0.8, 0.8),
   }
-  terminal_colors = {}
   for color_name, default_color in default_colors.items():
-    terminal_colors[color_name] = determine_semantic_color(
-      default_color,
-      colors,
+    color = determine_semantic_color(default_color, colors)
+    ansi_colors[color_name] = create_color_object(
+      color,
+      color_type='semantic',
+      invert=True,
+    )
+    bright_color = determine_semantic_color(default_color, colors)
+    ansi_colors[f'bright{color_name.capitalize()}'] = create_color_object(
+      bright_color,
+      color_type='semantic',
+      invert=True,
     )
 
-    terminal_colors[
-      f'bright{color_name.capitalize()}'] = determine_semantic_color(
-        default_color,
-        colors,
-      )
+  bootstrap_semantic_colors = {}
+  for name, terminal_color_name in [
+    ('danger', 'red'),
+    ('warning', 'yellow'),
+    ('info', 'cyan'),
+    ('success', 'green'),
+  ]:
+    color_object = ansi_colors[terminal_color_name]
+    bootstrap_semantic_colors[name] = color_object
 
   result = {
     'average_luminance': average_luminance,
@@ -102,261 +227,11 @@ def process(
     'is_light_theme': is_light_theme,
     'colors': colors,
     'bootstrap': {
-      'primary':
-      adjust_contrast(
-        primary,
-        average_luminance,
-        is_light=not is_light_theme,
-        invert=is_light_theme,
-        high_contrast=high_contrast,
-        k=k,
-      ),
-      'secondary':
-      adjust_contrast(
-        secondary,
-        average_luminance,
-        is_light=not is_light_theme,
-        invert=is_light_theme,
-        high_contrast=high_contrast,
-        k=k,
-      ),
-      'accent':
-      adjust_contrast(
-        accent,
-        average_luminance,
-        is_light=not is_light_theme,
-        invert=is_light_theme,
-        high_contrast=high_contrast,
-        k=k,
-      ),
-      'background':
-      adjust_contrast(
-        background_color,
-        average_luminance,
-        is_light=is_light_theme,
-        invert=is_light_theme,
-        high_contrast=high_contrast,
-        k=k,
-      ),
-      'backgroundAlternate':
-      adjust_contrast(
-        background_color_2,
-        average_luminance,
-        is_light=is_light_theme,
-        invert=is_light_theme,
-        high_contrast=high_contrast,
-        k=k,
-      ),
-      'selection':
-      adjust_contrast(
-        selection_color,
-        average_luminance,
-        is_light=is_light_theme,
-        invert=is_light_theme,
-        high_contrast=high_contrast,
-        k=k,
-      ),
-      'text':
-      adjust_contrast(
-        text_color,
-        average_luminance,
-        is_light=not is_light_theme,
-        invert=is_light_theme,
-        high_contrast=high_contrast,
-        k=k,
-      ),
-      'textAlternate':
-      adjust_contrast(
-        text_color_2,
-        average_luminance,
-        is_light=not is_light_theme,
-        invert=is_light_theme,
-        high_contrast=high_contrast,
-        k=k,
-      ),
-      'danger':
-      adjust_contrast(
-        terminal_colors['red'],
-        average_luminance,
-        is_light=not is_light_theme,
-        invert=is_light_theme,
-        high_contrast=high_contrast,
-        k=k,
-      ),
-      'warning':
-      adjust_contrast(
-        terminal_colors['yellow'],
-        average_luminance,
-        is_light=not is_light_theme,
-        invert=is_light_theme,
-        high_contrast=high_contrast,
-        k=k,
-      ),
-      'info':
-      adjust_contrast(
-        terminal_colors['cyan'],
-        average_luminance,
-        is_light=not is_light_theme,
-        invert=is_light_theme,
-        high_contrast=high_contrast,
-        k=k,
-      ),
-      'success':
-      adjust_contrast(
-        terminal_colors['green'],
-        average_luminance,
-        is_light=not is_light_theme,
-        invert=is_light_theme,
-        high_contrast=high_contrast,
-        k=k,
-      ),
+      **bootstrap_colors,
+      **text_colors,
+      **bootstrap_semantic_colors
     },
-    'terminal': {
-      'black':
-      adjust_contrast(
-        ansi_black,
-        average_luminance,
-        is_light=is_light_theme,
-        invert=is_light_theme,
-        high_contrast=high_contrast,
-        k=k,
-      ),
-      'white':
-      adjust_contrast(
-        ansi_white,
-        average_luminance,
-        is_light=not is_light_theme,
-        invert=is_light_theme,
-        high_contrast=high_contrast,
-        k=k,
-      ),
-      'brightBlack':
-      adjust_contrast(
-        ansi_bright_black,
-        average_luminance,
-        is_light=is_light_theme,
-        invert=is_light_theme,
-        high_contrast=high_contrast,
-        k=k,
-      ),
-      'brightWhite':
-      adjust_contrast(
-        ansi_bright_white,
-        average_luminance,
-        is_light=not is_light_theme,
-        invert=is_light_theme,
-        high_contrast=high_contrast,
-        k=k,
-      ),
-      'red':
-      adjust_contrast(
-        terminal_colors['red'],
-        average_luminance,
-        is_light=not is_light_theme,
-        invert=is_light_theme,
-        high_contrast=high_contrast,
-        k=k,
-      ),
-      'green':
-      adjust_contrast(
-        terminal_colors['green'],
-        average_luminance,
-        is_light=not is_light_theme,
-        invert=is_light_theme,
-        high_contrast=high_contrast,
-        k=k,
-      ),
-      'blue':
-      adjust_contrast(
-        terminal_colors['blue'],
-        average_luminance,
-        is_light=not is_light_theme,
-        invert=is_light_theme,
-        high_contrast=high_contrast,
-        k=k,
-      ),
-      'yellow':
-      adjust_contrast(
-        terminal_colors['yellow'],
-        average_luminance,
-        is_light=not is_light_theme,
-        invert=is_light_theme,
-        high_contrast=high_contrast,
-        k=k,
-      ),
-      'magenta':
-      adjust_contrast(
-        terminal_colors['magenta'],
-        average_luminance,
-        is_light=not is_light_theme,
-        invert=is_light_theme,
-        high_contrast=high_contrast,
-        k=k,
-      ),
-      'cyan':
-      adjust_contrast(
-        terminal_colors['cyan'],
-        average_luminance,
-        is_light=not is_light_theme,
-        invert=is_light_theme,
-        high_contrast=high_contrast,
-        k=k,
-      ),
-      'brightRed':
-      adjust_contrast(
-        terminal_colors['brightRed'],
-        average_luminance,
-        is_light=not is_light_theme,
-        invert=is_light_theme,
-        high_contrast=high_contrast,
-        k=k,
-      ),
-      'brightGreen':
-      adjust_contrast(
-        terminal_colors['brightGreen'],
-        average_luminance,
-        is_light=not is_light_theme,
-        invert=is_light_theme,
-        high_contrast=high_contrast,
-        k=k,
-      ),
-      'brightBlue':
-      adjust_contrast(
-        terminal_colors['brightBlue'],
-        average_luminance,
-        is_light=not is_light_theme,
-        invert=is_light_theme,
-        high_contrast=high_contrast,
-        k=k,
-      ),
-      'brightYellow':
-      adjust_contrast(
-        terminal_colors['brightYellow'],
-        average_luminance,
-        is_light=not is_light_theme,
-        invert=is_light_theme,
-        high_contrast=high_contrast,
-        k=k,
-      ),
-      'brightMagenta':
-      adjust_contrast(
-        terminal_colors['brightMagenta'],
-        average_luminance,
-        is_light=not is_light_theme,
-        invert=is_light_theme,
-        high_contrast=high_contrast,
-        k=k,
-      ),
-      'brightCyan':
-      adjust_contrast(
-        terminal_colors['brightCyan'],
-        average_luminance,
-        is_light=not is_light_theme,
-        invert=is_light_theme,
-        high_contrast=high_contrast,
-        k=k,
-      ),
-    }
+    'terminal': ansi_colors,
   }
   return result
 
@@ -424,31 +299,65 @@ def print_colors(deserialized_colors, pretty=False, in_json=False):
   if pretty and not in_json:
     print(f"Average luminance = {deserialized_colors['average_luminance']}")
     print(f"Average saturation = {deserialized_colors['average_saturation']}")
-    print(f"Is light theme = {deserialized_colors['is_light_theme']}")
+    print(f"Is light theme = {deserialized_colors['is_light_theme']}\n")
 
-    print("\nColors:")
-    for key, color_tuple in enumerate(deserialized_colors['colors']):
-      print(f"  {key}.: {srgb_to_hex(*color_tuple, pretty=True)}")
+    print("Colors:")
+    for index, color_tuple in enumerate(deserialized_colors['colors']):
+      print(f"  {index}.: {srgb_to_hex(*color_tuple, pretty=True)}")
 
     print("\nBootstrap:")
-    for key, color_tuple in deserialized_colors['bootstrap'].items():
-      print(f"  {key.capitalize()}: {srgb_to_hex(*color_tuple, pretty=True)}")
+    for key, color_object in deserialized_colors['bootstrap'].items():
+      print(f"  {key.capitalize()}:")
+      for subkey, value in color_object.items():
+        if isinstance(value, tuple):
+          print(f"    {subkey}: {srgb_to_hex(*value, pretty=True)}")
+        elif isinstance(value, dict):
+          print(f"    {subkey}:")
+          for semantic_name, semantic_color in value.items():
+            print(
+              f"      {semantic_name}: {srgb_to_hex(*semantic_color, pretty=True)}"
+            )
+        else:
+          print(f"    {subkey}: {value}")
 
     print("\nTerminal:")
-    for key, color_tuple in deserialized_colors['terminal'].items():
-      print(f"  {key}:  {srgb_to_hex(*color_tuple, pretty=True)}")
+    for key, color_object in deserialized_colors['terminal'].items():
+      print(f"  {key}:")
+      for subkey, value in color_object.items():
+        if isinstance(value, tuple):
+          print(f"    {subkey}: {srgb_to_hex(*value, pretty=True)}")
+        elif isinstance(value, dict):
+          print(f"    {subkey}:")
+          for semantic_name, semantic_color in value.items():
+            print(
+              f"      {semantic_name}: {srgb_to_hex(*semantic_color, pretty=True)}"
+            )
+        else:
+          print(f"    {subkey}: {value}")
   else:
     json.dump(
       {
         'isLightTheme': deserialized_colors['is_light_theme'],
         'colors': [srgb_to_hex(*x) for x in deserialized_colors['colors']],
         'bootstrap': {
-          key: srgb_to_hex(*value)
-          for key, value in deserialized_colors['bootstrap'].items()
+          key: {
+            subkey: (srgb_to_hex(*value) if isinstance(value, tuple) else {
+              k: srgb_to_hex(*v)
+              for k, v in value.items()
+            } if isinstance(value, dict) else value)
+            for subkey, value in color_object.items()
+          }
+          for key, color_object in deserialized_colors['bootstrap'].items()
         },
         'terminal': {
-          key: srgb_to_hex(*value)
-          for key, value in deserialized_colors['terminal'].items()
+          key: {
+            subkey: (srgb_to_hex(*value) if isinstance(value, tuple) else {
+              k: srgb_to_hex(*v)
+              for k, v in value.items()
+            } if isinstance(value, dict) else value)
+            for subkey, value in color_object.items()
+          }
+          for key, color_object in deserialized_colors['terminal'].items()
         }
       },
       sys.stdout,

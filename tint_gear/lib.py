@@ -449,11 +449,10 @@ def determine_theme_light_or_dark(
 
 def determine_primary_secondary_accent(
   colors: List[Tuple[float, float, float]],
-  average_saturation: float,
+  saturation_increase: float = 0.2,
 ) -> Tuple[Tuple[float, float, float], Tuple[float, float, float], Tuple[
     float, float, float]]:
   assert_list_of_rgb_colors(colors)
-  assert_saturation(average_saturation)
 
   colors = sorted(
     colors,
@@ -480,7 +479,7 @@ def determine_primary_secondary_accent(
   primary = set_saturation(
     *primary,
     clamp_with_epsilon(
-      get_saturation(*primary) + 0.2,
+      get_saturation(*primary) + saturation_increase,
       min_value=SATURATION_MIN,
       max_value=SATURATION_MAX,
       epsilon=0.5,
